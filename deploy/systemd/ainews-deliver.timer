@@ -1,0 +1,10 @@
+[Unit]
+Description=Deliver AI Newsletter at 06:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 Asia/Shanghai
+Persistent=true
+Unit=ainews-deliver.service
+
+[Install]
+WantedBy=timers.target

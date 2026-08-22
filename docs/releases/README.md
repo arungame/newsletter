@@ -1,0 +1,24 @@
+# Release Notes
+
+[English](./README.md) · [简体中文](./README.zh-CN.md)
+
+Release notes are the historical record of shipped changes. Use them with [CHANGELOG.md](../../CHANGELOG.md) for version-by-version review, and use [Roadmap](../../ROADMAP.md) for current planning.
+
+## Latest
+
+- [v1.2.72](./v1.2.72.md)
+
+## Recent Releases
+
+- [v1.2.71](./v1.2.71.md)
+- [v1.2.70](./v1.2.70.md)
+- [v1.2.69](./v1.2.69.md)
+
+## Maintainer Release Docs
+
+- [Release Checklist](../release-checklist.md)
+- [Release Artifacts](../release-artifacts.md)
+- [Release Recovery Notes](../release-recovery.md)
+- [Support Lifecycle](../support-lifecycle.md)
+
+For the full published archive, use [GitHub Releases](https://github.com/X-PG13/ainews-open/releases).

@@ -1,0 +1,28 @@
+channels:
+  static_site:
+    enabled: true
+    mode: review
+    account_id: primary-site
+    publish_time: "05:50"
+    adapter: static_site
+
+  wechat:
+    enabled: true
+    mode: review
+    account_id: primary-wechat
+    publish_time: "06:00"
+    adapter: wechat
+
+  x:
+    enabled: false
+    mode: review
+    account_id: primary-x
+    publish_time: "06:05"
+    adapter: x
+
+  xiaohongshu:
+    enabled: false
+    mode: manual_export
+    account_id: primary-xiaohongshu
+    publish_time: "06:10"
+    adapter: manual_export

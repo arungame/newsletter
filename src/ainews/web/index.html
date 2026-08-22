@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="AI News Open operator console for ingest, extraction, digest review, publishing, and recovery."
+    />
+    <meta name="theme-color" content="#f7f0e5" />
+    <title>AI News Open Console</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <style id="consoleFallbackStyles">
+      :root {
+        --bg: #f7f0e5;
+        --ink: #171717;
+        --muted: #6f665b;
+        --line: rgba(23, 23, 23, 0.12);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        min-height: 100%;
+        font-family: "Noto Sans SC", Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(219, 61, 27, 0.08), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(184, 140, 50, 0.12), transparent 32%),
+          linear-gradient(180deg, #fbf5eb 0%, #f3ead8 100%);
+      }
+      .skip-link {
+        position: fixed;
+        z-index: 1000;
+        top: 12px;
+        left: 12px;
+        max-width: calc(100vw - 24px);
+        padding: 10px 14px;
+        border-radius: 999px;
+        color: #fff8ee;
+        background: var(--ink);
+        transform: translateY(-180%);
+      }
+      .skip-link:focus {
+        transform: translateY(0);
+      }
+      #operator-console:focus {
+        outline: 2px solid rgba(219, 61, 27, 0.48);
+        outline-offset: 4px;
+      }
+      .shell {
+        width: min(1400px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 24px 0 56px;
+      }
+      .panel {
+        background: rgba(255, 252, 245, 0.86);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: 0 24px 70px rgba(81, 51, 17, 0.08);
+        padding: 22px;
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: 1.3fr 0.9fr;
+        gap: 24px;
+        margin-bottom: 18px;
+      }
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .toolbar-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .button {
+        border: 1px solid rgba(23, 23, 23, 0.16);
+        border-radius: 999px;
+        padding: 8px 12px;
+      }
+      .muted {
+        color: var(--muted);
+        margin: 4px 0 0;
+      }
+      .hero-status-rail,
+      .workflow-steps,
+      .form-grid,
+      .action-row,
+      .publish-grid,
+      .publication-list {
+        display: grid;
+        gap: 10px;
+      }
+      .hero-status-rail {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      .first-screen-loading-block {
+        display: grid;
+        gap: 10px;
+      }
+      .loading-card {
+        border: 1px solid rgba(23, 23, 23, 0.1);
+        border-radius: 18px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.52);
+      }
+      .loading-heading,
+      .loading-line {
+        display: block;
+        border-radius: 999px;
+        background: rgba(23, 23, 23, 0.08);
+      }
+      .loading-heading {
+        width: 52%;
+        height: 18px;
+      }
+      .loading-line {
+        width: 78%;
+        height: 10px;
+        margin-top: 10px;
+      }
+      .preview-mode-strip {
+        display: grid;
+        gap: 6px;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(23, 23, 23, 0.14);
+        border-left: 4px solid rgba(184, 140, 50, 0.78);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.58);
+      }
+      .preview-mode-kicker {
+        color: var(--muted);
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .preview-asset-detail {
+        color: var(--muted);
+        font-size: 12px;
+      }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        const isFileProtocol = window.location.protocol === "file:";
+        const cssCandidates = isFileProtocol
+          ? ["styles.css", "assets/styles.css"]
+          : ["/assets/styles.css", "assets/styles.css", "styles.css"];
+        const jsCandidates = isFileProtocol
+          ? ["app.js", "assets/app.js"]
+          : ["/assets/app.js", "assets/app.js", "app.js"];
+        const LOAD_TIMEOUT_MS = 900;
+        const ASSET_STATUS_EVENT = "ainews-console-asset-status";
+        const assetStatus = (window.__ainewsConsoleAssetStatus = window.__ainewsConsoleAssetStatus || {
+          css: { state: "pending", path: "" },
+          js: { state: "pending", path: "" },
+        });
+
+        const dedup = (items) => Array.from(new Set(items.filter((item) => typeof item === "string" && item)));
+        const snapshotAssetStatus = () => ({
+          css: { ...assetStatus.css },
+          js: { ...assetStatus.js },
+        });
+
+        const updateAssetStatus = (kind, state, path) => {
+          assetStatus[kind] = { state, path };
+          window.dispatchEvent(new CustomEvent(ASSET_STATUS_EVENT, { detail: snapshotAssetStatus() }));
+        };
+
+        const waitForAssetLoad = (element) =>
+          new Promise((resolve, reject) => {
+            const timeout = window.setTimeout(() => {
+              reject(new Error("asset load timeout"));
+            }, LOAD_TIMEOUT_MS);
+            element.addEventListener(
+              "load",
+              () => {
+                clearTimeout(timeout);
+                resolve();
+              },
+              { once: true }
+            );
+            element.addEventListener(
+              "error",
+              () => {
+                clearTimeout(timeout);
+                reject(new Error("asset load error"));
+              },
+              { once: true }
+            );
+          });
+
+        const removeFailedAssetNode = (element) => {
+          if (element && element.parentNode) {
+            element.parentNode.removeChild(element);
+          }
+        };
+
+        const loadElementWithFallback = async (id, candidates, createNode, kind) => {
+          const unique = dedup(candidates);
+          for (const candidate of unique) {
+            const element = createNode(candidate);
+            element.id = id;
+            element.setAttribute("data-console-asset", "bootstrap");
+            updateAssetStatus(kind, "loading", candidate);
+            document.head.appendChild(element);
+            try {
+              await waitForAssetLoad(element);
+              updateAssetStatus(kind, "loaded", candidate);
+              return;
+            } catch (_error) {
+              updateAssetStatus(kind, "failed", candidate);
+              removeFailedAssetNode(element);
+            }
+          }
+          updateAssetStatus(kind, "fallback", "inline");
+        };
+
+        const bootstrapConsoleAssets = () => {
+          loadElementWithFallback(
+            "consoleStylesheet",
+            cssCandidates,
+            (href) => {
+              const link = document.createElement("link");
+              link.rel = "stylesheet";
+              link.href = href;
+              return link;
+            },
+            "css"
+          ).catch(() => {});
+          loadElementWithFallback(
+            "consoleAppScript",
+            jsCandidates,
+            (src) => {
+              const script = document.createElement("script");
+              script.defer = true;
+              script.src = src;
+              return script;
+            },
+            "js"
+          ).catch(() => {});
+        };
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", bootstrapConsoleAssets, { once: true });
+        } else {
+          bootstrapConsoleAssets();
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#operator-console">跳到运维控制台</a>
+    <div class="background-grid" aria-hidden="true"></div>
+    <main id="mainContent" class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">AI News Open</p>
+          <h1>国内外 AI 新闻控制台</h1>
+          <p class="hero-copy">
+            采集、翻译、摘要、日报生成都在一个页面里完成。前端直接调用当前服务，不需要额外构建。
+          </p>
+          <div class="hero-pills" aria-label="控制台能力">
+            <span>Zero-build admin</span>
+            <span>Runtime-aware</span>
+            <span>Publish-ready</span>
+          </div>
+        </div>
+        <div class="token-box">
+          <label for="adminToken">Admin Token</label>
+          <div class="token-row">
+            <input id="adminToken" type="password" placeholder="可选，若服务端配置了 AINEWS_ADMIN_TOKEN" />
+            <button id="saveTokenButton" class="button ghost">保存</button>
+          </div>
+          <p class="muted">所有管理操作都会自动带上 `X-Admin-Token`。</p>
+          <div id="operationsStatusStrip" class="operations-status-strip loading" aria-live="polite">
+            <span id="heroHealthBadge" class="chip status-chip">系统状态：加载中</span>
+            <span id="heroSchemaVersion">schema：未同步</span>
+            <span id="heroBuildVersion">build：未同步</span>
+            <span id="heroGeneratedAt">最后数据：--</span>
+            <span id="heroDataAge">数据时效：--</span>
+            <span id="heroAutoRefreshCountdown">自动刷新：--</span>
+            <span id="heroLastSync">上次同步：--</span>
+          </div>
+          <div id="previewModeStrip" class="preview-mode-strip pending" aria-live="polite">
+            <span class="preview-mode-kicker">Preview mode</span>
+            <strong id="previewModeTitle">正在确认连接方式</strong>
+            <span id="previewModeDetail" class="preview-mode-detail">HTTP 服务视图会显示实时状态；file 模式只作为静态预览。</span>
+            <span id="previewAssetDetail" class="preview-asset-detail">Assets: CSS/JS 等待加载</span>
+          </div>
+          <div id="heroVersionPulse" class="hero-version-pulse" aria-live="polite">
+            <p class="version-kicker">版本脉搏</p>
+            <div class="version-pulse-grid">
+              <article class="version-pulse-item">
+                <p>发布版本</p>
+                <h3 id="heroReleaseVersion">--</h3>
+              </article>
+              <article class="version-pulse-item">
+                <p>数据窗口</p>
+                <h3 id="heroDataWindow">--</h3>
+              </article>
+            </div>
+          </div>
+          <div id="heroStatusRail" class="hero-status-rail" role="list" aria-label="运营状态速览" aria-live="polite">
+            <article id="heroRailHealthCard" class="status-rail-item is-loading" role="listitem" aria-describedby="heroRailHealthHint">
+              <p>运行健康</p>
+              <h3 id="heroRailHealth">未采样</h3>
+              <p id="heroRailHealthHint" class="sr-only">运行健康状态用于快速判断，异常时先看 Operations 面板里的健康检查列表。</p>
+            </article>
+            <article id="heroRailSchemaCard" class="status-rail-item is-loading" role="listitem" aria-describedby="heroRailSchemaHint">
+              <p>Schema</p>
+              <h3 id="heroRailSchema">--</h3>
+              <p id="heroRailSchemaHint" class="sr-only">Schema 用于确认后台与前端约定未发生版本漂移。</p>
+            </article>
+            <article id="heroRailBuildCard" class="status-rail-item is-loading" role="listitem" aria-describedby="heroRailBuildHint">
+              <p>构建版本</p>
+              <h3 id="heroRailBuild">--</h3>
+              <p id="heroRailBuildHint" class="sr-only">构建版本用于核对发布件与服务实例是否匹配。</p>
+            </article>
+            <article id="heroRailAgeCard" class="status-rail-item is-loading" role="listitem" aria-describedby="heroRailAgeHint">
+              <p>数据时效</p>
+              <h3 id="heroRailAge">--</h3>
+              <p id="heroRailAgeHint" class="sr-only">数据时效超过 1 小时通常表示运维层采集或 pipeline 刷新异常。</p>
+            </article>
+          </div>
+          <div class="start-cues" aria-label="首次运行建议">
+            <span>1 保存 Token</span>
+            <span>2 抓取新闻</span>
+            <span>3 选稿预览</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workflow-map panel" aria-labelledby="workflowMapTitle">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Operator Workflow</p>
+            <h2 id="workflowMapTitle">从线索到发布的闭环</h2>
+          </div>
+          <p class="workflow-note">首屏先给维护者一张地图：哪里进稿、哪里清洗、哪里编辑、哪里发布、哪里恢复。</p>
+        </div>
+        <div class="workflow-steps">
+          <article class="workflow-step">
+            <span class="step-index">01</span>
+            <h3>采集线索</h3>
+            <p>按区域、时间窗口和单源上限抓取国内外 AI 新闻，快速确认新闻池规模。</p>
+          </article>
+          <article class="workflow-step">
+            <span class="step-index">02</span>
+            <h3>抽取与恢复</h3>
+            <p>跟踪正文抽取、来源冷却、重试窗口和来源级告警，避免坏来源拖慢整条流水线。</p>
+          </article>
+          <article class="workflow-step">
+            <span class="step-index">03</span>
+            <h3>选稿与编辑</h3>
+            <p>查看入选、压制、重复簇和 ranked-out 原因，冻结编辑稿后再发布。</p>
+          </article>
+          <article class="workflow-step">
+            <span class="step-index">04</span>
+            <h3>多渠道发布</h3>
+            <p>面向 Telegram、飞书、公众号草稿和静态站点发布，并在发布历史里跟踪失败。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="stats-grid first-screen-loading" id="statsGrid" aria-label="首屏统计正在加载">
+        <article class="panel stat-card loading-card" data-loading-placeholder="stats">
+          <p class="loading-kicker">Loading</p>
+          <span class="loading-heading"></span>
+          <span class="loading-line"></span>
+        </article>
+        <article class="panel stat-card loading-card" data-loading-placeholder="stats">
+          <p class="loading-kicker">Loading</p>
+          <span class="loading-heading"></span>
+          <span class="loading-line short"></span>
+        </article>
+        <article class="panel stat-card loading-card" data-loading-placeholder="stats">
+          <p class="loading-kicker">Loading</p>
+          <span class="loading-heading"></span>
+          <span class="loading-line"></span>
+        </article>
+      </section>
+
+      <section
+        id="operator-console"
+        class="panel operations-panel"
+        aria-labelledby="operatorConsoleTitle"
+        tabindex="-1"
+      >
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Operations</p>
+            <h2 id="operatorConsoleTitle">运维总览</h2>
+          </div>
+          <div class="toolbar-row">
+            <label class="check-label compact-toggle">
+              <input id="autoRefreshCheckbox" type="checkbox" />
+              自动刷新（30s）
+            </label>
+            <span id="autoRefreshStatus" class="muted">自动刷新关闭</span>
+          </div>
+        </div>
+        <p class="muted">
+          把 `/health`、最近 pipeline、冷却来源、来源告警和发布失败收成一屏。细节操作仍保留在下方来源与抽取面板里。
+        </p>
+        <div id="operationsSummary" class="operations-summary-grid first-screen-loading" aria-label="运维摘要正在加载">
+          <article class="stat-card operations-stat-card loading-card" data-loading-placeholder="operations-summary">
+            <p class="loading-kicker">Health</p>
+            <span class="loading-heading"></span>
+            <span class="loading-line"></span>
+          </article>
+          <article class="stat-card operations-stat-card loading-card" data-loading-placeholder="operations-summary">
+            <p class="loading-kicker">Runtime</p>
+            <span class="loading-heading"></span>
+            <span class="loading-line short"></span>
+          </article>
+          <article class="stat-card operations-stat-card loading-card" data-loading-placeholder="operations-summary">
+            <p class="loading-kicker">Publish</p>
+            <span class="loading-heading"></span>
+            <span class="loading-line"></span>
+          </article>
+        </div>
+        <div class="operations-grid">
+          <article class="operations-slab">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Health</p>
+                <h3>系统状态</h3>
+              </div>
+            </div>
+            <div id="operationsHealth" class="first-screen-loading-block">
+              <article class="publication-card loading-card" data-loading-placeholder="operations-health">
+                <p class="loading-kicker">Waiting for /health</p>
+                <span class="loading-heading"></span>
+                <span class="loading-line"></span>
+                <span class="loading-line short"></span>
+              </article>
+            </div>
+            <div id="operationsMetrics" class="chip-row first-screen-loading-block">
+              <span class="chip pending">metrics: 等待采样</span>
+            </div>
+          </article>
+
+          <article class="operations-slab">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Pipeline</p>
+                <h3>最近运行</h3>
+              </div>
+            </div>
+            <div id="operationsPipelineRuns" class="publication-list compact-list first-screen-loading-block">
+              <article class="publication-card operations-card loading-card" data-loading-placeholder="pipeline-runs">
+                <p class="loading-kicker">Recent run</p>
+                <span class="loading-heading"></span>
+                <span class="loading-line"></span>
+              </article>
+            </div>
+          </article>
+
+          <article class="operations-slab">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Runtime</p>
+                <h3>热点来源</h3>
+              </div>
+            </div>
+            <div id="operationsSources" class="publication-list compact-list first-screen-loading-block">
+              <article class="publication-card operations-card loading-card" data-loading-placeholder="runtime-sources">
+                <p class="loading-kicker">Source health</p>
+                <span class="loading-heading"></span>
+                <span class="loading-line"></span>
+              </article>
+            </div>
+          </article>
+
+          <article class="operations-slab">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Incidents</p>
+                <h3>告警与发布失败</h3>
+              </div>
+            </div>
+            <div id="operationsAlerts" class="publication-list compact-list first-screen-loading-block">
+              <article class="publication-card operations-card loading-card" data-loading-placeholder="source-alerts">
+                <p class="loading-kicker">Incidents</p>
+                <span class="loading-heading"></span>
+                <span class="loading-line short"></span>
+              </article>
+            </div>
+            <div id="operationsPublicationFailures" class="publication-list compact-list first-screen-loading-block">
+              <article class="publication-card operations-card loading-card" data-loading-placeholder="publication-failures">
+                <p class="loading-kicker">Publish queue</p>
+                <span class="loading-heading"></span>
+                <span class="loading-line"></span>
+              </article>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="controls-grid">
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Pipeline</p>
+              <h2>作业控制</h2>
+            </div>
+            <button id="refreshAllButton" class="button ghost">刷新面板</button>
+          </div>
+          <div class="form-grid">
+            <label>
+              区域
+              <select id="regionSelect">
+                <option value="all">全部</option>
+                <option value="domestic">国内</option>
+                <option value="international">国际</option>
+              </select>
+            </label>
+            <label>
+              时间窗口
+              <select id="sinceHoursSelect">
+                <option value="24">24 小时</option>
+                <option value="48" selected>48 小时</option>
+                <option value="72">72 小时</option>
+              </select>
+            </label>
+            <label>
+              条数上限
+              <input id="limitInput" type="number" min="1" max="200" value="30" />
+            </label>
+            <label>
+              单源抓取上限
+              <input id="maxItemsInput" type="number" min="1" max="200" value="20" />
+            </label>
+          </div>
+          <div class="publish-grid">
+            <label class="check-label"><input class="publish-target" type="checkbox" value="telegram" /> Telegram</label>
+            <label class="check-label"><input class="publish-target" type="checkbox" value="feishu" /> 飞书</label>
+            <label class="check-label"><input class="publish-target" type="checkbox" value="wechat" /> 公众号草稿</label>
+            <label class="check-label"><input class="publish-target" type="checkbox" value="static_site" /> 静态站点</label>
+            <label class="check-label wide"><input id="wechatSubmitCheckbox" type="checkbox" /> 公众号草稿创建后直接提交发布</label>
+          </div>
+          <p class="muted">如果这里不勾选，系统会回退到服务端配置的 `AINEWS_PUBLISH_TARGETS` 默认发布目标。</p>
+          <p id="publishSafetyHint" class="publish-safety-note">
+            先通过“选稿预览”和“发布预览”确认内容。默认是“发送”型发布流程，只有静态站点输出属于本地预览产物，真实外发需手动勾选 Telegram、飞书或公众号并确认发布凭据已正确配置。
+          </p>
+          <div class="action-row">
+            <button id="ingestButton" class="button primary">抓取新闻</button>
+            <button id="extractButton" class="button ghost">抓正文</button>
+            <button id="enrichButton" class="button secondary">翻译国际新闻</button>
+            <button id="digestPreviewButton" class="button ghost">选稿预览</button>
+            <button id="digestButton" class="button primary">生成中文日报</button>
+            <button id="pipelineButton" class="button secondary">跑完整流水线</button>
+            <button id="publishButton" class="button ghost">发布日报</button>
+          </div>
+          <pre id="jobOutput" class="terminal"></pre>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Sources</p>
+              <h2>来源状态</h2>
+            </div>
+            <div class="toolbar-row">
+              <button id="refreshSourcesButton" class="button ghost">刷新来源</button>
+              <button id="resetSourceCooldownsButton" class="button ghost">解除全部冷却</button>
+            </div>
+          </div>
+          <div id="sourcesList" class="source-list"></div>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel digest-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Digest</p>
+              <h2>最新日报</h2>
+            </div>
+          </div>
+          <div id="digestView" class="digest-view">
+            <p class="muted">还没有生成日报。</p>
+          </div>
+        </article>
+
+        <div class="side-stack">
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Preview</p>
+              <h2>编辑预览</h2>
+            </div>
+          </div>
+          <p class="muted">展示本轮日报候选、入选原因，以及被 `suppress`、重复簇或条数上限排除的文章。</p>
+          <div id="digestPreviewView" class="publication-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Editor</p>
+              <h2>发布前编辑页</h2>
+            </div>
+            <div class="toolbar-row">
+              <button id="freezeDigestButton" class="button ghost">冻结为编辑稿</button>
+              <button id="saveDigestEditorButton" class="button secondary">保存编辑稿</button>
+            </div>
+          </div>
+          <p class="muted">在这里调整最终顺序、分组、发布标题和发布摘要。保存后，发布链路会优先使用当前冻结稿而不是实时重算。</p>
+          <div class="form-grid">
+            <label>
+              编辑者
+              <input id="digestEditorActorInput" type="text" placeholder="例如：X-PG13" />
+            </label>
+            <label>
+              变更摘要
+              <input id="digestChangeSummaryInput" type="text" placeholder="例如：调整头条顺序并补标题" />
+            </label>
+          </div>
+          <div id="digestEditorView" class="publication-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">History</p>
+              <h2>编辑稿版本历史</h2>
+            </div>
+            <div class="toolbar-row">
+              <button id="refreshDigestHistoryButton" class="button ghost">刷新历史</button>
+            </div>
+          </div>
+          <p class="muted">每次保存编辑稿都会生成新版本。你可以查看变更摘要、发布记录，并一键回滚到旧版本。</p>
+          <div id="digestHistoryView" class="publication-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Publish Preview</p>
+              <h2>目标平台最终预览</h2>
+            </div>
+            <div class="toolbar-row">
+              <button id="refreshPublishPreviewButton" class="button ghost">刷新预览</button>
+            </div>
+          </div>
+          <p class="muted">这里展示 Telegram、飞书、静态站点和公众号的最终输出形态，确保发布内容和冻结稿一致。</p>
+          <div id="publishPreviewView" class="publication-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Archive</p>
+                <h2>历史日报</h2>
+              </div>
+            </div>
+            <div id="digestArchive" class="archive-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Publish</p>
+                <h2>发布历史</h2>
+              </div>
+              <div class="toolbar-row">
+                <button id="refreshPublicationsButton" class="button ghost">刷新状态</button>
+                <button id="clearPublicationDigestFilterButton" class="button ghost">查看全部</button>
+              </div>
+            </div>
+            <p id="publicationsHint" class="muted">展示最近的发布记录；打开某份日报后会自动筛选到对应记录。</p>
+            <div class="publication-filters">
+              <label>
+                目标
+                <select id="publicationTargetFilter">
+                  <option value="">全部</option>
+                  <option value="telegram">Telegram</option>
+                  <option value="feishu">飞书</option>
+                  <option value="wechat">公众号</option>
+                  <option value="static_site">静态站点</option>
+                </select>
+              </label>
+              <label>
+                状态
+                <select id="publicationStatusFilter">
+                  <option value="">全部</option>
+                  <option value="ok">成功</option>
+                  <option value="pending">处理中</option>
+                  <option value="error">失败</option>
+                </select>
+              </label>
+              <label class="check-label">
+                <input id="publicationOnlyPendingCheckbox" type="checkbox" checked />
+                仅刷新待完成记录
+              </label>
+            </div>
+            <div id="publicationsList" class="publication-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Extraction Ops</p>
+            <h2>抽取重试面板</h2>
+          </div>
+          <div class="toolbar-row">
+            <button id="refreshExtractionOpsButton" class="button ghost">刷新失败队列</button>
+            <button id="retryExtractionSelectionButton" class="button secondary">重试当前筛选</button>
+          </div>
+        </div>
+        <p class="muted">
+          面向 `throttled`、`blocked`、`permanent_error` 等抽取状态。可按状态或错误类别筛选，并只看已到重试时间的文章。
+        </p>
+        <div class="publication-filters">
+          <label>
+            抽取状态
+            <select id="extractionStatusFilter">
+              <option value="">全部</option>
+              <option value="pending">pending</option>
+              <option value="throttled">throttled</option>
+              <option value="blocked">blocked</option>
+              <option value="temporary_error">temporary_error</option>
+              <option value="permanent_error">permanent_error</option>
+              <option value="skipped">skipped</option>
+              <option value="ready">ready</option>
+            </select>
+          </label>
+          <label>
+            错误类别
+            <select id="extractionErrorCategoryFilter">
+              <option value="">全部</option>
+              <option value="throttled">throttled</option>
+              <option value="blocked">blocked</option>
+              <option value="temporary_error">temporary_error</option>
+              <option value="permanent_error">permanent_error</option>
+            </select>
+          </label>
+          <label class="check-label">
+            <input id="extractionDueOnlyCheckbox" type="checkbox" checked />
+            仅看已到重试窗口
+          </label>
+        </div>
+        <div id="extractionOpsSummary" class="chip-row"></div>
+        <div id="extractionOpsList" class="publication-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Source Alerts</p>
+            <h2>来源级告警历史</h2>
+          </div>
+          <div class="toolbar-row">
+            <button id="refreshSourceAlertsButton" class="button ghost">刷新告警历史</button>
+          </div>
+        </div>
+        <p class="muted">
+          展示最近来源冷却激活和恢复通知，方便快速确认哪个来源刚进入冷却、哪个来源已经恢复。
+        </p>
+        <div id="sourceAlertsList" class="publication-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Articles</p>
+            <h2>新闻池</h2>
+          </div>
+        </div>
+        <div id="articlesList" class="articles-list"></div>
+      </section>
+    </main>
+  </body>
+</html>

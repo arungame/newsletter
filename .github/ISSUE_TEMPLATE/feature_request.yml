@@ -1,0 +1,34 @@
+name: Feature Request
+description: Propose a concrete capability or workflow improvement that is ready to be tracked as work
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the change is concrete enough to track as implementation work. For early ideas or open-ended design exploration, start in GitHub Discussions first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or maintainer problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the expected behavior and rough interface.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: What other approaches did you consider?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Links, screenshots, source examples, or operational constraints.

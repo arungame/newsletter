@@ -1,0 +1,8 @@
+[Unit]
+Description=Collect and build daily AI Newsletter
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ainews
+ExecStart=/usr/bin/docker compose run --rm ainews ainews collect-daily

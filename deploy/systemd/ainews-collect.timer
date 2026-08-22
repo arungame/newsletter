@@ -1,0 +1,10 @@
+[Unit]
+Description=Freeze AI Newsletter collection window at 05:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 05:00:00 Asia/Shanghai
+Persistent=true
+Unit=ainews-collect.service
+
+[Install]
+WantedBy=timers.target

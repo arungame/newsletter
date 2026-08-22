@@ -1,0 +1,158 @@
+# 发版清单
+
+[English](./release-checklist.md) · [简体中文](./release-checklist.zh-CN.md)
+
+每次准备公开发版前，建议按这份清单走一遍。
+
+## 打 tag 前
+
+1. 阅读 `CHANGELOG.md`，并在 `docs/releases/` 下补本次版本说明。
+2. 确认 `README.md` 和 `README.zh-CN.md` 里的文档、demo 链接都有效。
+3. 确认 `docs/release-artifacts.zh-CN.md` 仍然和当前 release bundle 结构一致。
+4. 运行：
+
+```bash
+make check
+```
+
+`make check` 现在已经包含本地 smoke 校验，所以只有在你单独排查启动问题时，才需要额外再跑一次 `make smoke`。
+
+5. 用当前 compose profile 验证 `docker compose config -q` 能通过。
+6. 确认 open code scanning alerts 为 `0`。
+7. 确认 demo 页面和 `docs/demo/` 下的样例文件都还在。
+
+## 版本更新
+
+1. 更新 `pyproject.toml` 中的版本号。
+2. 更新 `src/ainews/__init__.py` 中的版本号。
+3. 在 `CHANGELOG.md` 中增加本次版本条目。
+4. 新增或更新 `docs/releases/vX.Y.Z.md`。
+5. 确认 `ROADMAP.md` 和 `ROADMAP.zh-CN.md` 仍然把最新 patch release 指向 release notes 索引，而不是硬编码一个容易过期的 patch 号。
+
+## 发布自动化检查
+
+确认以下项都正常：
+
+- 如果仓库要启用 GitHub Pages 或 PyPI，先确认 [maintainer-bootstrap.zh-CN.md](./maintainer-bootstrap.zh-CN.md) 里的首次初始化已经完成
+- GitHub Actions `CI` 为绿色
+- GitHub Actions `CodeQL` 为绿色
+- 上一个已发布 tag 的 GitHub Actions `Release Artifact Smoke` 为绿色
+- `release.yml` 存在且是当前版本
+- 如果需要发 PyPI，`pypi-publish.yml` 已配置
+- 仓库 secrets 已补齐
+
+如果已发布 tag 对应的 `Release Artifact Smoke` 还没通过，这次 release 就不算完成。
+标准 release 流程现在会在 GitHub Release 发布后自动触发这条 smoke workflow。
+如果 merge、tag、release 或 workflow 命令超时，而且它可能已经改动 GitHub 状态，重试写操作前先按 [Release 恢复说明](./release-recovery.zh-CN.md) 验证远端状态。
+
+## GitHub Release
+
+1. 创建并推送 tag：
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+2. 确认 GitHub Release 页面中包含：
+
+- 构建出的 distributions
+- `sha256sums.txt`
+- SBOM
+- provenance attestation
+- 最终版 release notes
+- release artifact 的安装与校验说明
+
+3. 按 [Release 产物校验](./release-artifacts.zh-CN.md) 文档里的完整流程校验最终 tag。至少要确认 wheel 可安装，并且 CLI 能启动：
+
+```bash
+python -m pip install ainews_open-X.Y.Z-py3-none-any.whl
+python -m ainews --help
+```
+
+## 发版后
+
+对外公告 release 或关闭 milestone 前，先完成这份发版后 smoke checklist。
+
+### Release 收尾顺序
+
+确认 Release 页面、制品和 smoke workflows 都通过后，按这个顺序收尾：
+
+1. 确认 `CHANGELOG.md`、`docs/releases/vX.Y.Z.md` 和 release notes 索引都描述的是已经发布的 tag。
+2. 确认 `ROADMAP.md` 和 `ROADMAP.zh-CN.md` 仍然把最新 patch release 指向 release notes 索引，并把当前工作指向活跃的 GitHub milestone。
+3. 关闭 release milestone 前，先把延期事项，包括 PyPI trusted publishing，移到单独的 deferred milestone 或下一个维护 milestone。
+4. 只有当所有剩余 open item 都已经发布、移动或明确延期后，才关闭 release milestone。
+5. 开始后续维护 issue 前，先创建下一个 `v1.2.x` milestone，避免新工作继续堆到已经关闭的 release 上。
+
+### 发布后证据快照
+
+关闭 release 前，在 release PR、milestone 收尾记录或维护者交接说明里保留这组紧凑证据：
+
+- Release URL：已经发布的 `vX.Y.Z` GitHub Release 页面。
+- Tag commit：`git rev-list -n 1 vX.Y.Z` 对应的 commit，并确认它是否等于预期的 `main` commit。
+- 已发布资产：wheel、source archive、`sha256sums.txt` 和 `vX.Y.Z-sbom.json`。
+- 校验入口：引用 [Release 产物校验](./release-artifacts.zh-CN.md#copy-paste-verification-flow)，不要在这里重复完整 checklist。
+- Release workflow：该 tag 对应的成功 `Release` workflow run URL。
+- Artifact smoke：该 tag 对应的成功 `Release Artifact Smoke` workflow run URL。
+- 延期事项：确认除非本次明确启用 PyPI 发布，否则 PyPI publishing 仍留在 `Deferred: PyPI`。
+
+### Milestone rollover 责任
+
+除非另一位维护者明确接手，否则合并 release PR 或发布 tag 的维护者负责完成 milestone rollover。
+
+- 关闭 release milestone 前，确认它的 open issue 数为 `0`，并且所有延期事项都已经移出本次 release milestone。
+- 开始创建或移动后续维护 issue 前，先创建下一个 `v1.2.x` milestone。
+- 除非维护者明确决定开始处理 PyPI 发布，否则 issue `#86` 继续留在 `Deferred: PyPI`。
+- 如果 rollover 交给其他维护者，在 release PR 或 milestone closeout issue 里留下说明，写清下一位负责人和剩余检查。
+
+### 已发布 tag 和 Release 页面
+
+- [ ] Release 页面已经发布，不是 draft；除非本次有意发 prerelease，否则不能标成 prerelease。
+- [ ] tag 指向预期的 `main` commit。
+- [ ] GitHub 的 `Latest` 指向预期 tag。
+- [ ] 最终 release notes 和 `CHANGELOG.md`、`docs/releases/vX.Y.Z.md` 一致。
+- [ ] demo 页面和公开文档链接仍然可访问。
+
+### 自动化和制品
+
+- [ ] GitHub Actions `Release` 在该 tag 上执行成功。
+- [ ] GitHub Actions `Release Artifact Smoke` 在该 tag 上执行成功。
+- [ ] release commit 或 tag 对应的 GitHub Actions `CI`、`Smoke`、`CodeQL` 都是绿色。
+- [ ] GitHub Release 包含 wheel、source archive、`sha256sums.txt`、SBOM 和 provenance attestation。
+- [ ] 按 [Release 产物校验](./release-artifacts.zh-CN.md) 文档里的完整流程校验已发布资产，并且全部通过。
+
+### 安装烟测
+
+- [ ] 从已下载的 release wheel 在干净环境里安装成功。
+- [ ] 从已下载的 source archive 在干净环境里安装成功。
+- [ ] 在干净安装环境里 `python -m ainews --help` 可以运行。
+- [ ] 在干净安装环境里 `python -m ainews stats` 可以运行。
+- [ ] 如果本次 release 启用了 PyPI 发布，确认 GitHub 和 PyPI 上的包元信息都正确。
+
+### 维护者贡献可见性检查
+
+- [ ] 在关闭 milestone 前，补充一次人工维护者贡献检查：
+
+```bash
+git log --format="%an <%ae>" "${PREVIOUS_TAG}..${TAG}" \
+  | sort -u \
+  | grep -Ev 'dependabot\\[bot\\]|github-actions\\[bot\\]|renovate\\[bot\\]|actions-user'
+make contributors
+```
+
+- [ ] 如果结果里有 bot 账号噪音，在交付简报里说明并标注本次依赖/动作升级是否走了人工 PR 流程（原 Dependabot PR 在合并后已闭环）。
+
+### 收尾
+
+- [ ] 只有在 Release 页面、制品和 smoke workflows 都确认后，才关闭 release milestone。
+- [ ] 如需对外公告，可直接复用 `docs/releases/` 里的文案。
+- [ ] 延期事项放到单独 milestone，不要留在已经关闭的 release milestone 里。
+
+## 发版后失败分流
+
+当 GitHub 网络调用超时，或本地 ref 需要修复时，按 [Release 恢复说明](./release-recovery.zh-CN.md) 做命令级恢复。
+
+- Release 制品缺失或不完整：先确认 tag 指向预期 commit，再重跑 `Release` workflow。除非公开 tag 本身指错 commit，并且维护者明确接受兼容性风险，否则不要移动或重建公开 tag。
+- `Release Artifact Smoke` 失败：先判断失败点是 checksum、wheel 安装、source archive 安装、CLI 启动，还是 `/health` 启动。通过后续 PR 修复 release workflow 或打包问题；如果资产已经公开，修复后应发新的 patch tag。
+- Release notes 或 `Latest` 指向错误：如果 tag 和资产正确，只编辑 GitHub Release 元数据即可。如果 tag 指错 commit，先停下来记录修复方案，再发布新的 tag。
+- PyPI 不一致：把 PyPI 当成独立发布渠道处理。如果 PyPI 当前禁用或延期，保持 GitHub Release 有效，并把 PyPI 工作继续放在单独 milestone。

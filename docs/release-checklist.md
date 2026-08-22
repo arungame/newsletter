@@ -1,0 +1,158 @@
+# Release Checklist
+
+[English](./release-checklist.md) · [简体中文](./release-checklist.zh-CN.md)
+
+Use this checklist before cutting a new public release.
+
+## Before Tagging
+
+1. Read `CHANGELOG.md` and add the new release notes file under `docs/releases/`.
+2. Confirm `README.md` and `README.zh-CN.md` still point to valid docs and demo assets.
+3. Confirm `docs/release-artifacts.md` still matches the current release bundle shape.
+4. Run:
+
+```bash
+make check
+```
+
+`make check` now includes the local smoke check, so a separate `make smoke` rerun is only needed when you are debugging startup behavior by itself.
+
+5. Confirm `docker compose config -q` passes with the current compose profile.
+6. Confirm open code scanning alerts are `0`.
+7. Confirm the demo page still renders and sample assets exist under `docs/demo/`.
+
+## Versioning
+
+1. Update the version in `pyproject.toml`.
+2. Update the version in `src/ainews/__init__.py`.
+3. Add the release section to `CHANGELOG.md`.
+4. Add or update `docs/releases/vX.Y.Z.md`.
+5. Confirm `ROADMAP.md` and `ROADMAP.zh-CN.md` still point readers to the release notes index for the latest patch release instead of hard-coding a stale patch number.
+
+## Release Automation Readiness
+
+Confirm:
+
+- one-time repository setup in [maintainer-bootstrap.md](./maintainer-bootstrap.md) is complete if this repository publishes to GitHub Pages or PyPI
+- GitHub Actions `CI` is green
+- GitHub Actions `CodeQL` is green
+- GitHub Actions `Release Artifact Smoke` is green for the last published tag
+- `release.yml` is present and current
+- `pypi-publish.yml` is present if PyPI publication is intended
+- required repository secrets are configured
+
+Release is not considered complete until `Release Artifact Smoke` passes for the published tag.
+The standard release flow now dispatches that smoke workflow automatically after publishing the GitHub Release.
+If a merge, tag, release, or workflow command times out after it may have changed GitHub state, use the [release recovery notes](./release-recovery.md) before retrying the mutating command.
+
+## GitHub Release
+
+1. Create and push the tag:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+2. Verify the GitHub Release includes:
+
+- built distributions
+- `sha256sums.txt`
+- SBOM artifact
+- provenance attestation
+- final release notes
+- artifact install and checksum verification guidance
+
+3. Follow the [release artifact verification flow](./release-artifacts.md#copy-paste-verification-flow) for the final tag. At minimum, verify the wheel installs and the CLI starts:
+
+```bash
+python -m pip install ainews_open-X.Y.Z-py3-none-any.whl
+python -m ainews --help
+```
+
+## After Release
+
+Run the post-release smoke checklist before announcing the release or closing its milestone.
+
+### Release Closeout Sequence
+
+Use this order after the release page, assets, and smoke workflows are verified:
+
+1. Confirm `CHANGELOG.md`, `docs/releases/vX.Y.Z.md`, and the release notes index all describe the published tag.
+2. Confirm `ROADMAP.md` and `ROADMAP.zh-CN.md` still point readers to the release notes index for the latest patch release and to the active GitHub milestone for current work.
+3. Move deferred work, including PyPI trusted publishing, into a separate deferred milestone or the next maintenance milestone before closing the release milestone.
+4. Close the release milestone only after every remaining open item has either shipped, moved, or been explicitly deferred.
+5. Create the next `v1.2.x` milestone before opening follow-up maintenance issues, so new work does not accumulate against a closed release.
+
+### Post-Publish Evidence Snapshot
+
+Record this compact evidence set in the release PR, milestone closeout note, or maintainer handoff before closing the release:
+
+- Release URL: the published GitHub Release page for `vX.Y.Z`.
+- Tag commit: the `git rev-list -n 1 vX.Y.Z` commit, and whether it matches the intended `main` commit.
+- Assets present: wheel, source archive, `sha256sums.txt`, and `vX.Y.Z-sbom.json`.
+- Verification anchor: the [release artifact verification flow](./release-artifacts.md#copy-paste-verification-flow), not a duplicated checklist.
+- Release workflow: the successful `Release` workflow run URL for the tag.
+- Artifact smoke: the successful `Release Artifact Smoke` workflow run URL for the tag.
+- Deferred work: confirmation that PyPI publishing remains in `Deferred: PyPI` unless this release explicitly enabled it.
+
+### Milestone Rollover Ownership
+
+The maintainer who merges the release PR or publishes the tag owns milestone rollover unless another maintainer explicitly takes it over.
+
+- Before closing the release milestone, verify it has `0` open issues and that every deferred item has moved out of the release milestone.
+- Create the next `v1.2.x` milestone before opening or moving follow-up maintenance issues.
+- Keep issue `#86` in `Deferred: PyPI` unless the maintainer explicitly decides to start PyPI publishing work.
+- If rollover is handed off, leave a note in the release PR or milestone closeout issue naming the next owner and remaining checks.
+
+### Published Tag And Release Page
+
+- [ ] The release page is published, not a draft, and not marked as a prerelease unless that was intentional.
+- [ ] The tag points to the intended `main` commit.
+- [ ] GitHub marks the intended tag as `Latest`.
+- [ ] The final release notes match `CHANGELOG.md` and `docs/releases/vX.Y.Z.md`.
+- [ ] The demo page and public docs links still load.
+
+### Automation And Assets
+
+- [ ] GitHub Actions `Release` completed successfully for the tag.
+- [ ] GitHub Actions `Release Artifact Smoke` completed successfully for the tag.
+- [ ] GitHub Actions `CI`, `Smoke`, and `CodeQL` are green for the release commit or tag.
+- [ ] The GitHub Release contains the wheel, source archive, `sha256sums.txt`, SBOM, and provenance attestation.
+- [ ] The [release artifact verification flow](./release-artifacts.md#copy-paste-verification-flow) passes against the published assets.
+
+### Install Smoke
+
+- [ ] A clean wheel install from the downloaded release asset succeeds.
+- [ ] A clean source archive install from the downloaded release asset succeeds.
+- [ ] `python -m ainews --help` runs from the clean install.
+- [ ] `python -m ainews stats` runs from the clean install.
+- [ ] Package metadata on GitHub and PyPI looks correct if PyPI publication is enabled for this release.
+
+### Release Attribution Hygiene
+
+- [ ] Run a human-visible contributor summary before closing the release:
+
+```bash
+git log --format="%an <%ae>" "${PREVIOUS_TAG}..${TAG}" \
+  | sort -u \
+  | grep -Ev 'dependabot\\[bot\\]|github-actions\\[bot\\]|renovate\\[bot\\]|actions-user'
+make contributors
+```
+
+- [ ] Keep any bot noise out of the handoff summary you send to maintainers; if bot accounts appear, note that the human-authored PRs for dependency/workflow upgrades are tracked in the release PR body and close comments.
+
+### Closeout
+
+- [ ] Close the release milestone only after the release page, assets, and smoke workflows are verified.
+- [ ] Announce the release using `docs/releases/` copy if applicable.
+- [ ] Leave deferred work in a separate milestone instead of carrying it inside the closed release milestone.
+
+## Post-Release Failure Triage
+
+Use the [release recovery notes](./release-recovery.md) for command-level recovery when GitHub network calls time out or local refs need repair.
+
+- Missing or partial release assets: confirm the tag points to the intended commit, then re-run the `Release` workflow. Do not move or recreate a public tag unless the published tag itself points to the wrong commit and the maintainer explicitly accepts the compatibility risk.
+- Failed `Release Artifact Smoke`: inspect whether the failure is checksum, wheel install, source archive install, CLI startup, or `/health` startup. Fix the release workflow or package issue in a follow-up PR, then publish a new patch tag if the released assets are already public.
+- Wrong release notes or `Latest` target: edit the GitHub Release metadata if the tag and assets are correct. If the wrong commit was tagged, stop and document the remediation before publishing another tag.
+- PyPI mismatch: treat PyPI as a separate release channel. If PyPI is disabled or deferred, keep the GitHub Release valid and leave PyPI work in its own milestone.

@@ -1,0 +1,92 @@
+PYTHON ?= python3
+
+.PHONY: ingest extract enrich digest pipeline publish publications refresh-publications housekeeping monitoring-up monitoring-down lint build sbom contributors check serve test test-local coverage smoke
+
+ingest:
+	$(PYTHON) -m ainews ingest
+
+enrich:
+	$(PYTHON) -m ainews enrich --limit 20
+
+extract:
+	$(PYTHON) -m ainews extract --limit 20
+
+digest:
+	$(PYTHON) -m ainews print-digest --use-llm --persist
+
+pipeline:
+	$(PYTHON) -m ainews run-pipeline --use-llm --persist --export
+
+publish:
+	$(PYTHON) -m ainews publish --use-llm --persist --export --target static_site
+
+publications:
+	$(PYTHON) -m ainews list-publications --limit 20
+
+refresh-publications:
+	$(PYTHON) -m ainews refresh-publications --target wechat --limit 20
+
+housekeeping:
+	$(PYTHON) -m ainews prune-source-runtime-history --retention-days 45
+
+monitoring-up:
+	docker compose --profile monitoring up --build -d
+
+monitoring-down:
+	docker compose --profile monitoring down
+
+lint:
+	$(PYTHON) -m ruff check src tests
+
+build:
+	$(PYTHON) -m build
+
+sbom:
+	PYTHON_BIN="$$( $(PYTHON) -c 'import sys; print(sys.executable)' )"; \
+	$(PYTHON) -m cyclonedx_py environment "$$PYTHON_BIN" --pyproject pyproject.toml --mc-type application --output-reproducible --of JSON -o sbom.json
+
+contributors:
+	@echo "# Human-visible contributors (excluding bot noise):"
+	@git shortlog -sne --all --no-merges \
+		| grep -Ev '(bot|dependabot\\[bot\\]|github-actions\\[bot\\]|renovate\\[bot\\]|actions-user)' \
+		| sed -n '1,200p'
+
+check: lint coverage build smoke
+
+serve:
+	$(PYTHON) -m uvicorn ainews.api:create_app --factory --host 0.0.0.0 --port 8000
+
+test:
+	$(PYTHON) -m unittest discover -s tests -v
+
+test-local:
+	PYTHONPATH="$(CURDIR)/src:$$PYTHONPATH" $(PYTHON) -m unittest discover -s tests -v
+
+coverage:
+	$(PYTHON) -m coverage run -m unittest discover -s tests -v
+	$(PYTHON) -m coverage report
+
+smoke:
+	@AINEWS_HOME="$(CURDIR)/.ainews-smoke" $(PYTHON) -m uvicorn ainews.api:create_app --factory --host 127.0.0.1 --port 8001 >/tmp/ainews-smoke.log 2>&1 & \
+	PID=$$!; \
+	trap 'kill $$PID >/dev/null 2>&1 || true' EXIT; \
+	rm -f /tmp/ainews-smoke-health.json /tmp/ainews-smoke-curl.log; \
+	READY=0; \
+	for attempt in $$(seq 1 30); do \
+		if curl -fsS http://127.0.0.1:8001/health >/tmp/ainews-smoke-health.json 2>/tmp/ainews-smoke-curl.log; then \
+			READY=1; \
+			break; \
+		fi; \
+		sleep 1; \
+	done; \
+	if [ "$$READY" -ne 1 ]; then \
+		echo "Smoke server did not become ready after 30 seconds." >&2; \
+		if [ -s /tmp/ainews-smoke-curl.log ]; then \
+			echo "Last curl error:" >&2; \
+			sed 's/^/  /' /tmp/ainews-smoke-curl.log >&2; \
+		fi; \
+		echo "Smoke server log:" >&2; \
+		sed 's/^/  /' /tmp/ainews-smoke.log >&2; \
+		exit 1; \
+	fi; \
+	$(PYTHON) -c 'import json; payload=json.load(open("/tmp/ainews-smoke-health.json", "r", encoding="utf-8")); assert payload["ready"] is True, payload'
